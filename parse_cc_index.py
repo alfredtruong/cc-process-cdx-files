@@ -10,11 +10,12 @@ import collections
 import pandas as pd
 from tqdm import tqdm
 import urllib.request
-from multiprocessing import Pool
+from multiprocessing import Pool,cpu_count
 
-storage_folder = 'data/'
-file_prefix = 'https://commoncrawl.s3.amazonaws.com/' # this doesnt work
-file_prefix = 'https://data.commoncrawl.org/'
+CC_INDEX_PATH = 'data/cc-index.paths'
+CC_CDX_EXTRACT_PATH = 'C:\\Users\\alfred\\Desktop\\D_DRIVE\\data\\cc\\'
+CC_HTTP_PREFIX = 'https://data.commoncrawl.org/'
+NUM_WORKERS = min(cpu_count()-1,48)
 
 #%%
 def read_every_line(fname, max_lines=-1):
@@ -39,7 +40,15 @@ def reporthook(count, block_size, total_size):
     sys.stdout.flush()
 
 def save(url, filename):
-    urllib.request.urlretrieve(url, filename, reporthook)
+    if os.path.exists(filename):
+        print(f'[save] skip, already exists')
+        return
+    else:
+        t0 = time.time()
+        print(f'[save] download {url} and save to {filename}')
+        urllib.request.urlretrieve(url, filename) #, reporthook)
+        t1 = time.time()
+        print(f'duration = {t1-t0}')
 
 def process_index_file_line(line):
     assert type(line)==str
@@ -74,21 +83,24 @@ def process_index_file_line(line):
             return ()
         
 def process_index_file(file_name):
-    print('Unzipping index file ... ')
+    print(f'[process_index_file] unzip index file ... ', end='')
     
     df_name = file_name.replace('.gz','.feather')
     file_unzipped = file_name.split('.gz')[0] # where to save uncompressed cdx file
 
+    t0 = time.time()
     with gzip.open(file_name, 'rb') as f_in:
         with open(file_unzipped, 'wb') as f_out:
             shutil.copyfileobj(f_in, f_out)
+    t1 = time.time()
+    print(f'duration = {t1-t0}')
 
     lines = read_every_line(file_unzipped,1e8)
 
     print('{} lines extracted'.format(len(lines)))
     
     print('Pre-processing index lines ... ')
-    out = list_multiprocessing(lines, process_index_file_line, workers=8)
+    out = list_multiprocessing(lines, process_index_file_line, workers=NUM_WORKERS)
     
     # filter our blank lines
     out =  [_ for _ in out if _ != ()]
@@ -119,21 +131,26 @@ def process_index_file(file_name):
         columns=cols
     )
 
-    df = df[df.language=='rus'] # CHANGE THIS
+    # https://en.wikipedia.org/wiki/ISO_639-3
+    # zho = chinese
+    # cmn = mandarin
+    # yue = cantonese
+    # nan = southern min
+    df = df[df.language=='yue']
     df['wet'] = df.warc.apply(lambda x: x.replace('/warc/','/wet/').replace('.warc.','.warc.wet.'))
-    df['wet'] = df['wet'].apply(lambda x: file_prefix + x)
+    df['wet'] = df['wet'].apply(lambda x: CC_HTTP_PREFIX + x)
 
     print('Index dataframe is ready ... ')
     
-    os.remove(file_name) 
-    os.remove(file_unzipped) 
+    os.remove(file_name)
+    os.remove(file_unzipped)
 
     print('Files removed ... ')
     
     df = df.dropna().drop_duplicates().reset_index(drop=True)
     df.to_feather(df_name)
     
-    print('Df saved ... ')        
+    print('Df saved ... ')
 
 def list_multiprocessing(param_lst, func, **kwargs):
     
@@ -149,15 +166,18 @@ def list_multiprocessing(param_lst, func, **kwargs):
 
 def _apply_lst(args):
     params, func, num, kwargs = args
-    return num, func(*params,**kwargs)    
+    return num, func(*params,**kwargs)
 
 ##############################################
 # PARSE CC_INDEX_PATH FILE
 ##############################################
 #%%
-CC_INDEX_PATH = 'data/cc-index.paths'
-cc_indexes = read_every_line(CC_INDEX_PATH)
+cc_indexes = read_every_line(CC_INDEX_PATH,1) # only do 1 cdx file
 cc_indexes = cc_indexes[:-2] # remove the meta-data / technical lines
+'''
+cc-index/collections/CC-MAIN-2024-22/indexes/cluster.idx
+cc-index/collections/CC-MAIN-2024-22/metadata.yaml
+'''
 cc_indexes = [_.replace('\n','') for _ in cc_indexes] # remove line breaks
 
 # iterate over the index files
@@ -167,7 +187,7 @@ for i,cc_index in enumerate(cc_indexes):
         pass
     else:
         cc_index_file = cc_index.split('/')[-1]
-        file_dict[os.path.join(storage_folder,cc_index_file)] = file_prefix + cc_index
+        file_dict[os.path.join(CC_CDX_EXTRACT_PATH,cc_index_file)] = CC_HTTP_PREFIX + cc_index
 
 print(len(file_dict))
 #%%
@@ -181,8 +201,8 @@ for i,(file_name,url) in enumerate(tqdm(file_dict.items())):
     print('PROCESSING INDEX FILE [{}]/[{}] ...'.format(i,len(file_dict)))
     print('Downloading an index file {} ...'.format(file_name))
     save(url, file_name)
-    #process_index_file(file_name)
-    #gc.collect()
-    # print(i,(file_name,url))
-    #print('Downloaded an index file ...')
+    process_index_file(file_name)
+    gc.collect()
+    print(i,(file_name,url))
+    print('Downloaded an index file ...')
 # %%
