@@ -8,7 +8,7 @@ import warc
 import nltk
 import pickle 
 # you will need to download this
-nltk.download('punkt')  
+nltk.download('punkt')
 import shutil
 import os,sys
 import tldextract
@@ -41,9 +41,8 @@ def reporthook(count, block_size, total_size):
 
 def save(url, filename):
     urllib.request.urlretrieve(url, filename, reporthook)
-    
-def read_every_line(fname,
-                    max_lines=-1):
+
+def read_every_line(fname, max_lines=-1):
     lines = []
     with open(fname, encoding='utf-8') as f:
         for i, l in enumerate(f):
@@ -77,10 +76,7 @@ def process_web_text(text):
     sentences = [item for sublist in sentences for item in sublist]
     return sentences
 
-def list_multiprocessing(param_lst,
-                         func,
-                         **kwargs):
-    
+def list_multiprocessing(param_lst,func,**kwargs):
     workers = kwargs.pop('workers')
 
     with Pool(workers) as p:
@@ -93,7 +89,7 @@ def list_multiprocessing(param_lst,
 
 def _apply_lst(args):
     params, func, num, kwargs = args
-    return num, func(*params,**kwargs)    
+    return num, func(*params,**kwargs)
 
 def process_wet_file(wet_url):
     global url_set
@@ -102,7 +98,7 @@ def process_wet_file(wet_url):
 
         file_name = wet_url.split('/')[-1]
         file_unzipped = file_name.replace('.warc.wet.gz','.warc')
-        save(wet_url, file_name)    
+        save(wet_url, file_name)
 
         print('Download complete {} ... ')
 
@@ -117,8 +113,7 @@ def process_wet_file(wet_url):
             with open(file_unzipped, 'wb') as f_out:
                 shutil.copyfileobj(f_in, f_out)
 
-        lines = read_every_line(file_unzipped,
-                                1e8)
+        lines = read_every_line(file_unzipped, 1e8)
 
         print('File unzipped ... ')
 
@@ -128,24 +123,27 @@ def process_wet_file(wet_url):
             for i,record in enumerate(f):
                 if record.url in url_set:
                     _tldextract = tldextract.extract(record.url)
-                    d = _tldextract.domain       
-                    tld = _tldextract.suffix  
+                    d = _tldextract.domain
+                    tld = _tldextract.suffix
                     text = record.payload.read().decode("utf-8")
                     sentences = process_web_text(text)
 
-                    temp_df = pd.DataFrame(data={
-                        'url':[record.url]*len(sentences),
-                        'domain':[d]*len(sentences),
-                        'tld':[tld]*len(sentences),
-                        'sentence':sentences}
-                                           ,columns=cols)                 
+                    temp_df = pd.DataFrame(
+                        data={
+                            'url':[record.url]*len(sentences),
+                            'domain':[d]*len(sentences),
+                            'tld':[tld]*len(sentences),
+                            'sentence':sentences
+                        },
+                        columns=cols
+                    )
 
                     df = df.append(temp_df)
 
         print('WET file processed ... ')
 
-        os.remove(file_name) 
-        os.remove(file_unzipped) 
+        os.remove(file_name)
+        os.remove(file_unzipped)
 
         print('Files removed ... ')
 
